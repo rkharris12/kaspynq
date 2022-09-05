@@ -120,7 +120,7 @@ architecture rtl of kaspynq is
         );
     end component;
 
-    constant C_VERSION            : std_logic_vector(31 downto 0) := x"0000001a";
+    constant C_VERSION            : std_logic_vector(31 downto 0) := x"0000001b";
 
     constant C_MEM_INTF_BITS      : integer := 64;
     constant C_TARGET_BITS        : integer := 256;
@@ -169,6 +169,7 @@ architecture rtl of kaspynq is
     signal matrix_base_address    : std_logic_vector(31 downto 0);
     signal result_base_address    : std_logic_vector(31 downto 0);
     signal target_base_address    : std_logic_vector(31 downto 0);
+    signal nonce_init             : std_logic_vector(63 downto 0);
 
     type avalon_state_type        is (E_IDLE, E_READ_TARGET_REQ, E_READ_TARGET, E_READ_DATA_REQ, E_READ_DATA, E_READ_MATRIX_REQ, E_READ_MATRIX, E_WAIT, E_WRITE);
     signal avalon_state           : avalon_state_type;
@@ -387,6 +388,7 @@ begin
 
     -- target and din should be stable when used on clk_hash so don't need to CDC them
     -- nonce should be stable when used on clk_avalon so don't need to CDC it
+    -- nonce_init should be stable when used on clk_hash so don't need to CDC it
 
     -- local matrix memory
     matrix_mem_1 : blk_mem_gen_1
@@ -427,6 +429,7 @@ begin
             matrix_base_address    <= (others => '0');
             result_base_address    <= (others => '0');
             target_base_address    <= (others => '0');
+            nonce_init             <= (others => '0');
         elsif rising_edge(clk_avalon) then
             m_avalon_readdata      <= (others => '0');
             m_avalon_readdatavalid <= '0';
@@ -461,6 +464,10 @@ begin
                             m_avalon_readdata <= std_logic_vector(nonce(31 downto 0));
                         when 8 =>
                             m_avalon_readdata <= std_logic_vector(nonce(63 downto 32));
+                        when 9 =>
+                            m_avalon_readdata <= nonce_init(31 downto 0);
+                        when 10 =>
+                            m_avalon_readdata <= nonce_init(63 downto 32);
                         when others =>
                             null;
                     end case;
@@ -470,16 +477,20 @@ begin
                 if (to_integer(unsigned(address_bank)) = 0) then
                     case to_integer(unsigned(address_offset)) is 
                         when 1 =>
-                            start               <= m_avalon_writedata(0);
-                            sync_reset          <= m_avalon_writedata(1);
+                            start                    <= m_avalon_writedata(0);
+                            sync_reset               <= m_avalon_writedata(1);
                         when 3 =>
-                            target_base_address <= m_avalon_writedata;
+                            target_base_address      <= m_avalon_writedata;
                         when 4 =>
-                            data_base_address   <= m_avalon_writedata;
+                            data_base_address        <= m_avalon_writedata;
                         when 5 =>
-                            matrix_base_address <= m_avalon_writedata;
+                            matrix_base_address      <= m_avalon_writedata;
                         when 6 =>
-                            result_base_address <= m_avalon_writedata;
+                            result_base_address      <= m_avalon_writedata;
+                        when 9 =>
+                            nonce_init(31 downto 0)  <= m_avalon_writedata;
+                        when 10 =>
+                            nonce_init(63 downto 32) <= m_avalon_writedata;
                         when others =>
                             null;
                     end case;
@@ -518,7 +529,7 @@ begin
                     if (start_hash_resync = '1') then
                         input_cnt       <= to_unsigned(C_INPUT_CYCLES, input_cnt'length);
                         hash_in_cnt     <= (others => '0');
-                        nonce           <= (others => '0');
+                        nonce           <= unsigned(nonce_init);
                         nonce_mem_raddr <= (others => '0');
                         nonce_mem_waddr <= (others => '0');
                         nonce_state     <= E_HASH;
